@@ -1,6 +1,6 @@
-1.首先启用cdp.js对cdp监听。
+1.启用node cdp.js对cdp监听。
 
-2.然后使用python去启动调试的web进行连接cdp。
+2.使用python去启动调试的web进行连接cdp。
 
 3.打开f12定好断点,运行到断点。
 
