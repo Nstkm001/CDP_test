@@ -1,18 +1,16 @@
 from mitmproxy.tools.main import mitmdump
-
 import requests
 import json
 
-def connect_debugger():
-    connect_url = "http://localhost:3000/connect"
-    connect_data = {
-        "wsUrl": "ws://127.0.0.1:9222/devtools/page/9B37E91EFE7AB6C6B3F343A80B8FEFE2"
-    }
-    connect_headers = {
-        "Content-Type": "application/json"
-    }
-    response = requests.post(connect_url, headers=connect_headers, data=json.dumps(connect_data))
-    return response
+
+# 全局代理开关
+USE_PROXY = True
+
+# 全局代理配置
+PROXIES = {
+    "http": "http://127.0.0.1:8080",
+    "https": "http://127.0.0.1:8080"
+}
 
 def evaluate_expression(expression):
     evaluate_url = "http://localhost:3000/evaluate"
@@ -23,74 +21,75 @@ def evaluate_expression(expression):
         "Content-Type": "application/json"
     }
 
-    response = requests.post(evaluate_url, headers=evaluate_headers, data=json.dumps(evaluate_data))
+    # 根据全局开关决定是否使用代理
+    proxies = PROXIES if USE_PROXY else None
+
+    # 发送 POST 请求
+    response = requests.post(
+        evaluate_url,
+        headers=evaluate_headers,
+        data=json.dumps(evaluate_data),
+        proxies=proxies  # 传入代理
+    )
     return response.json()
 
 
-def sign(data):
-    print(data)
-    recv = evaluate_expression(f"g.a.sm3('{data}')")
-    print(recv)
+def sign(data,requestId,timestamp):
+    recv = evaluate_expression(f"a.a.MD5('{data}{requestId}{timestamp}').toString()")
     return recv.get('result').get('value')
+
+def Get_requestId():
+    recv = evaluate_expression(f"p()")
+    return recv.get('result').get('value')
+
+def Get_timestamp():
+    recv = evaluate_expression(f"Date.parse(new Date)")
+    return recv.get('result').get('description')
 
 def encrypt(data):
     print(data)
-    recv = evaluate_expression(f"Object(h[\"b\"])({data})")
+    recv = evaluate_expression(f"l('{data}')")
     print(recv)
     return recv.get('result').get('value')
 
 def decrypt(data):
     print(data)
-    recv = evaluate_expression(f"Object(h[\"a\"])({data})")
+    recv = evaluate_expression(f"d('{data}')")
     print(recv)
     return recv.get('result').get('value')
 
-
 def JSON_stringify(data):
-    return json.dumps((data),separators=(",", ":"))
+    return json.dumps((data),separators=(",", ":"),ensure_ascii=False)
 
 
 class MyAddon:
     @staticmethod
     def request(flow):
-        if "process.json" in flow.request.path :
-            datas = flow.request.get_content()
-            datas = json.loads(datas)
-            headers = flow.request.headers
-
-            datas["signKey"] = sign(str(datas["sysHead"]["seqNo"]) + JSON_stringify(datas["sysHead"])+ JSON_stringify(datas["body"]) +"9tNFWyQNaXcWcjY9")
-            datas["body"] = encrypt(JSON_stringify(datas["body"]))
-
-            req_datas = JSON_stringify(datas).encode()
-            Content_Length = bytes(str(len(req_datas)), 'utf-8')
-            headers['Content-Length'] = Content_Length
-            flow.request.raw_content = req_datas
+        datas = flow.request.get_content()
+        headers = flow.request.headers
+        requestId = Get_requestId()
+        timestamp = Get_timestamp()
+        headers['requestId'] = requestId
+        headers['timestamp'] = timestamp
+        headers['sign'] = sign(str(datas.decode()),requestId,timestamp)
+        req_datas = encrypt(str(datas.decode()))
+        Content_Length = bytes(str(len(req_datas)), 'utf-8')
+        headers['Content-Length'] = Content_Length
+        flow.request.raw_content = req_datas.encode()
 
 
     @staticmethod
     def response(flow):
-        if flow.request.path == '/prod-api/at/AAS-aas/PublicTransaction/process.json?version=1.0.0':
-            if b"body" in flow.response.get_content():
-                datas = flow.response.get_content()
-                datas = json.loads(datas)
-                datas['a_test'] = json.loads(decrypt(JSON_stringify(datas["body"])))
-                #避免其他的\被转化。
-                req_datas = JSON_stringify(datas).replace("\\\"","\\\\\"").encode('utf-8').decode('unicode_escape')
-                Content_Length = bytes(str(len(req_datas)), 'utf-8')
-                headers = flow.response.headers
-                headers['Content-Length'] = Content_Length
-                flow.response.raw_content = req_datas
+        datas = flow.response.get_content()
+        datas = decrypt(datas.decode())
+        #避免其他的\被转化。
+        req_datas = json.loads(JSON_stringify(datas))
+        Content_Length = bytes(str(len(req_datas)), 'utf-8')
+        headers = flow.response.headers
+        headers['Content-Length'] = Content_Length
+        flow.response.raw_content = req_datas.encode()
 
 addons = [MyAddon()]
 
 if __name__ == "__main__":
-    connect_response = connect_debugger()
-
-    if "error" not in connect_response:
-        input("请点击触发断点后回车")
-        expression = "g.a.sm3(a.sysHead.seqNo + JSON.stringify(a.sysHead) + JSON.stringify(t) + v).toString()"
-        evaluate_response = evaluate_expression(expression)
-        print("调用测试结果:",evaluate_response.get('result').get('value'))
-        mitmdump(['-s', __file__, '--listen-host', '127.0.0.1', '--listen-port', '8899'])
-    else:
-        print("Failed to connect to debugger.")
+    mitmdump(['-s', __file__, '--listen-host', '127.0.0.1', '--listen-port', '8899'])
