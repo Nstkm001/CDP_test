@@ -61,17 +61,25 @@ const server = http.createServer((req, res) => {
             body += chunk.toString();
         });
         req.on('end', () => {
-            const { wsUrl } = JSON.parse(body);
-            if (!wsUrl) {
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: 'WebSocket URL is required' }));
-                return;
-            }
+            try {
+                const { wsUrl } = JSON.parse(body);
+                if (!wsUrl) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'WebSocket URL is required' }));
+                    return;
+                }
 
-            connectDebugger(wsUrl).then(() => {
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ message: 'Debugger connected' }));
-            });
+                connectDebugger(wsUrl).then(() => {
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ message: 'Debugger connected' }));
+                }).catch(err => {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Failed to connect to debugger', details: err.message }));
+                });
+            } catch (err) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Invalid JSON format', details: err.message }));
+            }
         });
     } else if (req.method === 'POST' && pathname === '/evaluate') {
         let body = '';
@@ -79,14 +87,19 @@ const server = http.createServer((req, res) => {
             body += chunk.toString();
         });
         req.on('end', () => {
-            const { expression } = JSON.parse(body);
-            if (!expression) {
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: 'Expression is required' }));
-                return;
-            }
+            try {
+                const { expression } = JSON.parse(body);
+                if (!expression) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Expression is required' }));
+                    return;
+                }
 
-            evaluateExpression(res, expression);
+                evaluateExpression(res, expression);
+            } catch (err) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Invalid JSON format', details: err.message }));
+            }
         });
     } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
