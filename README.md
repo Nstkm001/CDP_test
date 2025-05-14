@@ -1,3 +1,4 @@
+使用教程 https://xz.aliyun.com/news/17952
 1.启用node cdp.js对cdp监听。
 
 2.使用python去启动调试的web进行连接cdp。
